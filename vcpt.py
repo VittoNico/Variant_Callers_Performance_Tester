@@ -1,4 +1,5 @@
- """
+'''python
+"""
  #!/bin/bash
 
 # ✅ Legge i sample SRR da un file chiamato sample.txt
@@ -74,3 +75,4 @@ for SAMPLE in "${SAMPLES[@]}"; do
     echo "✅ Finished $SAMPLE"
 done
 """
+'''
