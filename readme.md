@@ -74,11 +74,12 @@ Each caller is configured with parameters that restrict SV detection to **DUP** 
 
 ---
 
-## 🧠 Tips
+## 🧠 Warnings
 
 * Be sure all tools are in their respective `conda` environments.
 * Always check basecalling quality before investing compute time.
 * You can parallelize this pipeline using GNU Parallel or a job scheduler (e.g. SLURM).
+* The .sh file of the tools has been tested and it is ready to use. The python version needs testing
 
 ---
 
