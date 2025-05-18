@@ -1,14 +1,14 @@
 #!/bin/bash
 
-# Legge i sample SRR da un file chiamato sample.txt
+# Read SRR samples from sample.txt
 mapfile -t SAMPLES < sample.txt
 
 # Reference file
 REF="reference.fasta"
 THREADS=24
-TRUTH="../truth_set.vcf.gz"  # ← path al tuo truth set
+TRUTH="../truth_set.vcf.gz"
 
-# Inizializza Conda
+# Initialize Conda
 source "$(conda info --base)/etc/profile.d/conda.sh"
 
 for SAMPLE in "${SAMPLES[@]}"; do
@@ -17,28 +17,28 @@ for SAMPLE in "${SAMPLES[@]}"; do
     mkdir -p "$SAMPLE"
     cd "$SAMPLE" || exit
 
-    # Scarica la run SRA (Nanopore)
+    # Download SRA run (Nanopore)
     prefetch "$SAMPLE" --progress
     fasterq-dump --threads "$THREADS" --outdir ./ "$SAMPLE"
 
-    # Unisci tutti i fastq trovati nella cartella
+    # Combine all fastq files
     find . -type f -name "${SAMPLE}*.fastq" -exec cat {} + > "${SAMPLE}_combined.fastq"
     RAW_READS="${SAMPLE}_combined.fastq"
 
-    # Rimuovi tutto tranne il fastq combinato
+    # Remove everything except combined fastq
     rm -rf "$SAMPLE"
     rm -rf *.sra
     find . -type f -name "${SAMPLE}*.fastq" ! -name "${RAW_READS}" -delete
 
-    # QC iniziale con NanoPlot
+    # Initial QC with NanoPlot
     mkdir -p nanoplot_${SAMPLE}
     NanoPlot --fastq "${RAW_READS}" -o nanoplot_${SAMPLE} --threads $THREADS
 
-    # Trimming con Porechop
+    # Trimming with Porechop
     conda activate sv-env
     porechop -i "${RAW_READS}" -o "${SAMPLE}_trimmed.fastq" --threads $THREADS
 
-    # Filtro di qualità con NanoFilt (es. Q≥10)
+    # Quality filtering with NanoFilt (Q≥10)
     cat "${SAMPLE}_trimmed.fastq" | NanoFilt -q 10 > "${SAMPLE}_filtered.fastq"
     FILTERED_READS="${SAMPLE}_filtered.fastq"
 
@@ -51,33 +51,37 @@ for SAMPLE in "${SAMPLES[@]}"; do
     samtools index "${SAMPLE}_mapped.sort.bam"
     samtools depth -a "${SAMPLE}_mapped.sort.bam" > "${SAMPLE}_coverage.txt"
 
-    # SV Calling: Sniffles (filter only DUP) with timing
+    # SV Calling: Sniffles (filter only high-quality DUP)
     echo "⏱️ Starting Sniffles for $SAMPLE"
-    /usr/bin/time -v -o "${SAMPLE}_sniffles.time" sniffles --input "${SAMPLE}_mapped.sort.bam" --vcf "${SAMPLE}_sniffles_tmp.vcf" --allow-overwrite
-    bcftools view -i 'SVTYPE="DUP"' "${SAMPLE}_sniffles_tmp.vcf" > "${SAMPLE}_sniffles.vcf"
+    /usr/bin/time -v -o "${SAMPLE}_sniffles.time" sniffles --input "${SAMPLE}_mapped.sort.bam" --vcf "${SAMPLE}_sniffles_tmp.vcf" \
+        --allow-overwrite --min_support 5 --min_seq_size 50 --min_homo_af 0.7 --min_het_af 0.3
+    bcftools view -i 'SVTYPE="DUP" & QUAL>=20' "${SAMPLE}_sniffles_tmp.vcf" > "${SAMPLE}_sniffles.vcf"
     rm -f "${SAMPLE}_sniffles_tmp.vcf"
 
-    # SV Calling: cuteSV (filter only DUP) with timing
+    # SV Calling: cuteSV (filter only high-quality DUP)
     echo "⏱️ Starting cuteSV for $SAMPLE"
-    /usr/bin/time -v -o "${SAMPLE}_cutesv.time" cuteSV "${SAMPLE}_mapped.sort.bam" ../"$REF" "${SAMPLE}_cutesv_tmp.vcf" cute --max_size 1100000 --min_support 5
-    bcftools view -i 'SVTYPE="DUP"' "${SAMPLE}_cutesv_tmp.vcf" > "${SAMPLE}_cutesv.vcf"
+    /usr/bin/time -v -o "${SAMPLE}_cutesv.time" cuteSV "${SAMPLE}_mapped.sort.bam" ../"$REF" "${SAMPLE}_cutesv_tmp.vcf" cute \
+        --max_size 1100000 --min_support 5 --min_size 50 --sample "$SAMPLE" --genotype
+    bcftools view -i 'SVTYPE="DUP" & QUAL>=20' "${SAMPLE}_cutesv_tmp.vcf" > "${SAMPLE}_cutesv.vcf"
     rm -f "${SAMPLE}_cutesv_tmp.vcf"
 
-    # DeBreak + filter DUP with timing
+    # DeBreak + filter high-quality DUP
     echo "⏱️ Starting DeBreak for $SAMPLE"
     conda activate debreak
     mkdir -p debreak_${SAMPLE}
-    /usr/bin/time -v -o "${SAMPLE}_debreak.time" debreak --bam "${SAMPLE}_mapped.sort.bam" --outpath debreak_${SAMPLE}
-    bcftools view -i 'SVTYPE="DUP"' debreak_${SAMPLE}/variants.vcf > debreak_${SAMPLE}/dup.vcf
+    /usr/bin/time -v -o "${SAMPLE}_debreak.time" debreak --bam "${SAMPLE}_mapped.sort.bam" --outpath debreak_${SAMPLE} \
+        --min_support 5 --min_size 50
+    bcftools view -i 'SVTYPE="DUP" & QUAL>=20' debreak_${SAMPLE}/variants.vcf > debreak_${SAMPLE}/dup.vcf
     mv debreak_${SAMPLE}/dup.vcf debreak_${SAMPLE}/variants.vcf
     conda deactivate
 
-    # SVIM - call only tandem duplications with timing
+    # SVIM - call only high-quality tandem duplications
     echo "⏱️ Starting SVIM for $SAMPLE"
     conda activate svim
     mkdir -p svim_${SAMPLE}
     /usr/bin/time -v -o "${SAMPLE}_svim.time" svim alignment svim_${SAMPLE} "${SAMPLE}_mapped.sort.bam" --reference ../"$REF" \
-        --tandem-duplications --skip-insertions --skip-deletions --skip-inversions --skip-translocations
+        --tandem-duplications --skip-insertions --skip-deletions --skip-inversions --skip-translocations \
+        --min_sv_size 50 --sample "$SAMPLE" --min_allele_frequency 0.2
     conda deactivate
 
     # Truvari collapse (now including DeBreak VCF)
