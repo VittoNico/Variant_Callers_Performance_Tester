@@ -1,6 +1,6 @@
 # Nanopore SV Duplication Detection Pipeline
 
-This pipeline is designed for structural variant (SV) discovery focused specifically on **duplications (SVTYPE=DUP)** using Oxford Nanopore sequencing data. It incorporates QC, trimming, mapping, SV calling (Sniffles, cuteSV, DeBreak, SVIM), and benchmarking using Truvari.
+This pipeline is designed for structural variant (SV) discovery focused specifically on **duplications (SVTYPE=DUP)** using Oxford Nanopore sequencing data. It incorporates QC, trimming, mapping, SV calling (Sniffles, cuteSV, DeBreak, SVIM, along with a report of their performance in terms of CPU usage and time), and benchmarking using Truvari. 
 
 ---
 
