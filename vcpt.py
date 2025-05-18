@@ -103,46 +103,51 @@ def process_sample(sample, ref, truth, threads):
             ["samtools", "depth", "-a", sorted_bam, "-o", f"{sample}_coverage.txt"],
             stage_name="samtools depth")
         
-        # 5. Variant Calling with Metrics
-        # Sniffles
+        # 5. Variant Calling with Quality Filtering
+        # Sniffles - added quality filters
         sniffles_tmp = f"{sample}_sniffles_tmp.vcf"
         sniffles_vcf = f"{sample}_sniffles.vcf"
-        metrics["sniffles"] = run_command(
-            ["sniffles", "--input", sorted_bam, "--vcf", sniffles_tmp, "--allow-overwrite"],
-            stage_name="sniffles")
+        metrics["sniffles"] = run_command([
+            "sniffles", "--input", sorted_bam, "--vcf", sniffles_tmp, 
+            "--allow-overwrite", "--min_support", "5", "--min_seq_size", "50",
+            "--min_homo_af", "0.7", "--min_het_af", "0.3"
+        ], stage_name="sniffles")
         with open(sniffles_vcf, "w") as outfile:
-            run_command(["bcftools", "view", "-i", 'SVTYPE="DUP"', sniffles_tmp], stdout=outfile)
+            run_command(["bcftools", "view", "-i", 'SVTYPE="DUP" & QUAL>=20', sniffles_tmp], stdout=outfile)
         Path(sniffles_tmp).unlink()
         
-        # cuteSV
+        # cuteSV - added quality filters
         cutesv_tmp = f"{sample}_cutesv_tmp.vcf"
         cutesv_vcf = f"{sample}_cutesv.vcf"
         metrics["cuteSV"] = run_command([
             "cuteSV", sorted_bam, f"../{ref}", cutesv_tmp, "cute",
-            "--max_size", "1100000", "--min_support", "5", "--threads", str(threads)
+            "--max_size", "1100000", "--min_support", "5", "--threads", str(threads),
+            "--min_size", "50", "--sample", sample, "--genotype"
         ], stage_name="cuteSV")
         with open(cutesv_vcf, "w") as outfile:
-            run_command(["bcftools", "view", "-i", 'SVTYPE="DUP"', cutesv_tmp], stdout=outfile)
+            run_command(["bcftools", "view", "-i", 'SVTYPE="DUP" & QUAL>=20', cutesv_tmp], stdout=outfile)
         Path(cutesv_tmp).unlink()
         
-        # DeBreak
+        # DeBreak with quality filtering
         debreak_dir = Path(f"debreak_{sample}")
         debreak_dir.mkdir(exist_ok=True)
-        metrics["debreak"] = run_command(
-            ["debreak", "--bam", sorted_bam, "--outpath", str(debreak_dir), "--threads", str(threads)],
-            stage_name="debreak")
+        metrics["debreak"] = run_command([
+            "debreak", "--bam", sorted_bam, "--outpath", str(debreak_dir),
+            "--threads", str(threads), "--min_support", "5", "--min_size", "50"
+        ], stage_name="debreak")
         with open(debreak_dir/"dup.vcf", "w") as outfile:
-            run_command(["bcftools", "view", "-i", 'SVTYPE="DUP"', debreak_dir/"variants.vcf"], stdout=outfile)
+            run_command(["bcftools", "view", "-i", 'SVTYPE="DUP" & QUAL>=20', debreak_dir/"variants.vcf"], stdout=outfile)
         (debreak_dir/"variants.vcf").unlink()
         (debreak_dir/"dup.vcf").rename(debreak_dir/"variants.vcf")
         
-        # SVIM
+        # SVIM with quality filtering
         svim_dir = Path(f"svim_{sample}")
         svim_dir.mkdir(exist_ok=True)
         metrics["svim"] = run_command([
             "svim", "alignment", str(svim_dir), sorted_bam, "--reference", f"../{ref}",
             "--tandem-duplications", "--skip-insertions", "--skip-deletions",
-            "--skip-inversions", "--skip-translocations", "--threads", str(threads)
+            "--skip-inversions", "--skip-translocations", "--threads", str(threads),
+            "--min_sv_size", "50", "--sample", sample, "--min_allele_frequency", "0.2"
         ], stage_name="svim")
         
         # 6. Truvari Analysis
