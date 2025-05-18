@@ -63,9 +63,7 @@ All callers are configured to report only duplication-type SVs (DUP)
 ### 📤 Output (per sample)
 
 * Quality plots (`nanoplot_*`)
-* Filtered FASTQ (`*_filtered.fastq`)
 * VCF files: `*_sniffles.vcf`, `*_cutesv.vcf`, `debreak_*/`, `svim_*/`
-* Coverage: `*_coverage.txt`
 * Benchmark (optional): `truvari_*`
 
 ---
