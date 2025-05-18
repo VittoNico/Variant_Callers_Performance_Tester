@@ -21,91 +21,46 @@ This pipeline is designed for structural variant (SV) discovery focused specific
   * `fasterq-dump`, `prefetch` (from `sra-tools`)
   * `minimap2`, `samtools`
 
----
+# Structural Variant Detection Pipeline
 
-## 📁 Input
+This pipeline processes Nanopore sequencing data to detect tandem duplications (DUP SVs) using multiple callers, then merges and evaluates the results.
 
-* `sample.txt`: Plaintext file with one SRR ID per line.
-* `reference.fasta`: Reference genome.
+## Pipeline Overview
 
----
+### 1. Data Download and Processing
+- **Input**: Takes SRA accession numbers from `sample.txt`
+- **Download**: Retrieves Nanopore reads using `prefetch` and `fasterq-dump`
+- **QC**: Performs initial quality assessment with `NanoPlot`
+- **Processing**:
+  - Adapter trimming with `Porechop`
+  - Quality filtering (Q≥10) using `NanoFilt`
 
-## 🧪 Pipeline Steps
+### 2. Mapping
+- Aligns filtered reads to reference genome using `minimap2` with optimized parameters for Nanopore data
+- Processes alignments with `samtools`:
+  - Converts SAM to BAM
+  - Sorts and indexes BAM files
+  - Generates coverage statistics
 
-### 1. Sample download and processing
+### 3. Variant Calling (Tandem Duplications Only)
+Runs four specialized SV callers in parallel:
+- **Sniffles**: Sensitive breakpoint detection
+- **cuteSV**: Precise SV calling with size filtering (≤1.1Mb)
+- **DeBreak**: Specialized for breakpoint refinement
+- **SVIM**: Tuned specifically for tandem duplications  
+All callers are configured to report only duplication-type SVs (DUP)
 
-```bash
-mapfile -t SAMPLES < sample.txt
-for SAMPLE in "${SAMPLES[@]}"; do
- prefetch "$SAMPLE" --progress
- fasterq-dump --threads 24 --outdir ./ "$SAMPLE"
- find . -type f -name "${SAMPLE}*.fastq" -exec cat {} + > "${SAMPLE}_combined.fastq"
- rm -rf "$SAMPLE" *.sra
- find . -type f -name "${SAMPLE}*.fastq" ! -name "${SAMPLE}_combined.fastq" -delete
- NanoPlot --fastq "${SAMPLE}_combined.fastq" -o nanoplot_${SAMPLE} --threads 24
- porechop -i "${SAMPLE}_combined.fastq" -o "${SAMPLE}_trimmed.fastq" --threads 24
- cat "${SAMPLE}_trimmed.fastq" | NanoFilt -q 10 > "${SAMPLE}_filtered.fastq"
-### 2. Mapping with Minimap2
+### 4. Truvari Analysis
+- **Collapse**: Merges variant calls from all four methods using `truvari collapse` with:
+  - 1000bp reciprocal overlap threshold
+  - 70% sequence similarity requirement
+  - Priority given to callers in specified order
+- **Benchmarking**: Evaluates merged calls against truth set with `truvari bench`
+  - Generates precision/recall metrics
+  - Produces comprehensive output reports
 
-```bash
-minimap2 -x map-ont -A 2 -B 8 -O 4,24 -E 2,1 -m 5000 -z 200,100 --secondary=no -s 30 -a reference.fasta "${SAMPLE}_filtered.fastq" -t 24 > "${SAMPLE}_mapped.sam"
-```
 
-### 10. Convert SAM to BAM + Sorting + Indexing
-
-```bash
-samtools view -bS "${SAMPLE}_mapped.sam" > "${SAMPLE}_mapped.bam"
-samtools sort "${SAMPLE}_mapped.bam" -o "${SAMPLE}_mapped.sort.bam"
-samtools index "${SAMPLE}_mapped.sort.bam"
-samtools depth -a "${SAMPLE}_mapped.sort.bam" > "${SAMPLE}_coverage.txt"
-```
-
-### 11. SV Calling: Sniffles
-
-```bash
-sniffles --input "${SAMPLE}_mapped.sort.bam" --vcf "${SAMPLE}_sniffles.vcf" --allow-overwrite --svtypes DUP
-```
-
-### 12. SV Calling: cuteSV
-
-```bash
-cuteSV "${SAMPLE}_mapped.sort.bam" reference.fasta "${SAMPLE}_cutesv.vcf" cute --max_size 1100000 --min_support 5 --genotype --sv_type DUP
-```
-
-### 13. SV Calling: DeBreak
-
-```bash
-conda activate debreak
-debreak --bam "${SAMPLE}_mapped.sort.bam" --outpath debreak_${SAMPLE} --sv_types DUP
-conda deactivate
-```
-
-### 14. SV Calling: SVIM
-
-```bash
-conda activate svim
-mkdir -p svim_${SAMPLE}
-svim alignment svim_${SAMPLE} "${SAMPLE}_mapped.sort.bam" --reference reference.fasta --skip_unspecified --sv_types DUP
-conda deactivate
-```
-
-### 15. Truvari Benchmarking (Optional)
-
-Ensure you have a merged or collapsed truth VCF (`truth.vcf`) available for comparison.
-
-```bash
-truvari bench -b ../truth.vcf -c ${SAMPLE}_cutesv.vcf -o truvari_${SAMPLE}_cutesv --includebed target_regions.bed -p 0 -P 0.5 -r 500 -O 0 --passonly --gtcomp --pctseq 0 --multimatch
-```
-
-### 16. Cleanup (Keep QC, Coverage, BAM index, and VCFs)
-
-```bash
-rm -f "${SAMPLE}_combined.fastq" "${SAMPLE}_trimmed.fastq" "${SAMPLE}_mapped.sam" "${SAMPLE}_mapped.bam" "${SAMPLE}_mapped.sort.bam" "${SAMPLE}_mapped.sort.bam.bai"
-```
-
----
-
-## 📤 Output (per sample)
+### 📤 Output (per sample)
 
 * Quality plots (`nanoplot_*`)
 * Filtered FASTQ (`*_filtered.fastq`)
