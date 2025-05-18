@@ -32,57 +32,20 @@ This pipeline is designed for structural variant (SV) discovery focused specific
 
 ## 🧪 Pipeline Steps
 
-### 1. Read Samples
+### 1. Sample download and processing
 
 ```bash
 mapfile -t SAMPLES < sample.txt
-```
-
-### 2. For Each Sample
-
-```bash
 for SAMPLE in "${SAMPLES[@]}"; do
-```
-
-### 3. Download Raw Nanopore Data
-
-```bash
-prefetch "$SAMPLE" --progress
-fasterq-dump --threads 24 --outdir ./ "$SAMPLE"
-```
-
-### 4. Merge All FASTQ Files
-
-```bash
-find . -type f -name "${SAMPLE}*.fastq" -exec cat {} + > "${SAMPLE}_combined.fastq"
-```
-
-### 5. Clean Intermediate Files
-
-```bash
-rm -rf "$SAMPLE" *.sra
-find . -type f -name "${SAMPLE}*.fastq" ! -name "${SAMPLE}_combined.fastq" -delete
-```
-
-### 6. QC - NanoPlot
-
-```bash
-NanoPlot --fastq "${SAMPLE}_combined.fastq" -o nanoplot_${SAMPLE} --threads 24
-```
-
-### 7. Adapter Trimming - Porechop
-
-```bash
-porechop -i "${SAMPLE}_combined.fastq" -o "${SAMPLE}_trimmed.fastq" --threads 24
-```
-
-### 8. Read Filtering - NanoFilt
-
-```bash
-cat "${SAMPLE}_trimmed.fastq" | NanoFilt -q 10 > "${SAMPLE}_filtered.fastq"
-```
-
-### 9. Mapping with Minimap2
+ prefetch "$SAMPLE" --progress
+ fasterq-dump --threads 24 --outdir ./ "$SAMPLE"
+ find . -type f -name "${SAMPLE}*.fastq" -exec cat {} + > "${SAMPLE}_combined.fastq"
+ rm -rf "$SAMPLE" *.sra
+ find . -type f -name "${SAMPLE}*.fastq" ! -name "${SAMPLE}_combined.fastq" -delete
+ NanoPlot --fastq "${SAMPLE}_combined.fastq" -o nanoplot_${SAMPLE} --threads 24
+ porechop -i "${SAMPLE}_combined.fastq" -o "${SAMPLE}_trimmed.fastq" --threads 24
+ cat "${SAMPLE}_trimmed.fastq" | NanoFilt -q 10 > "${SAMPLE}_filtered.fastq"
+### 2. Mapping with Minimap2
 
 ```bash
 minimap2 -x map-ont -A 2 -B 8 -O 4,24 -E 2,1 -m 5000 -z 200,100 --secondary=no -s 30 -a reference.fasta "${SAMPLE}_filtered.fastq" -t 24 > "${SAMPLE}_mapped.sam"
