@@ -1,4 +1,4 @@
-!/bin/bash
+#!/bin/bash
 
 # Legge i sample SRR da un file chiamato sample.txt
 mapfile -t SAMPLES < sample.txt
@@ -76,11 +76,11 @@ for SAMPLE in "${SAMPLES[@]}"; do
         --tandem-duplications --skip-insertions --skip-deletions --skip-inversions --skip-translocations
     conda deactivate
 
-    # Truvari collapse
+    # Truvari collapse (now including DeBreak VCF)
     conda activate sv-env
     mkdir -p truvari_${SAMPLE}
     truvari collapse \
-        -i "${SAMPLE}_sniffles.vcf" "${SAMPLE}_cutesv.vcf" svim_${SAMPLE}/variants.vcf \
+        -i "${SAMPLE}_sniffles.vcf" "${SAMPLE}_cutesv.vcf" svim_${SAMPLE}/variants.vcf debreak_${SAMPLE}/variants.vcf \
         -o truvari_${SAMPLE}/${SAMPLE}_merged.vcf \
         -f ../"$REF" \
         --passonly --chain -r 1000 -p 0.0 -P 0.7 -O 0.2 -k first
