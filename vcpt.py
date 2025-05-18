@@ -51,20 +51,29 @@ for SAMPLE in "${SAMPLES[@]}"; do
     samtools index "${SAMPLE}_mapped.sort.bam"
     samtools depth -a "${SAMPLE}_mapped.sort.bam" > "${SAMPLE}_coverage.txt"
 
-    # SV Calling
-    sniffles --input "${SAMPLE}_mapped.sort.bam" --vcf "${SAMPLE}_sniffles.vcf" --allow-overwrite
-    cuteSV "${SAMPLE}_mapped.sort.bam" ../"$REF" "${SAMPLE}_cutesv.vcf" cute --max_size 1100000 --min_support 5
+    # SV Calling: Sniffles (filter only DUP)
+    sniffles --input "${SAMPLE}_mapped.sort.bam" --vcf "${SAMPLE}_sniffles_tmp.vcf" --allow-overwrite
+    bcftools view -i 'SVTYPE="DUP"' "${SAMPLE}_sniffles_tmp.vcf" > "${SAMPLE}_sniffles.vcf"
+    rm -f "${SAMPLE}_sniffles_tmp.vcf"
 
-    # DeBreak
+    # SV Calling: cuteSV (filter only DUP)
+    cuteSV "${SAMPLE}_mapped.sort.bam" ../"$REF" "${SAMPLE}_cutesv_tmp.vcf" cute --max_size 1100000 --min_support 5
+    bcftools view -i 'SVTYPE="DUP"' "${SAMPLE}_cutesv_tmp.vcf" > "${SAMPLE}_cutesv.vcf"
+    rm -f "${SAMPLE}_cutesv_tmp.vcf"
+
+    # DeBreak + filter DUP
     conda activate debreak
     mkdir -p debreak_${SAMPLE}
     debreak --bam "${SAMPLE}_mapped.sort.bam" --outpath debreak_${SAMPLE}
+    bcftools view -i 'SVTYPE="DUP"' debreak_${SAMPLE}/variants.vcf > debreak_${SAMPLE}/dup.vcf
+    mv debreak_${SAMPLE}/dup.vcf debreak_${SAMPLE}/variants.vcf
     conda deactivate
 
-    # SVIM
+    # SVIM - call only tandem duplications
     conda activate svim
     mkdir -p svim_${SAMPLE}
-    svim alignment svim_${SAMPLE} "${SAMPLE}_mapped.sort.bam" --reference ../"$REF"
+    svim alignment svim_${SAMPLE} "${SAMPLE}_mapped.sort.bam" --reference ../"$REF" \
+        --tandem-duplications --skip-insertions --skip-deletions --skip-inversions --skip-translocations
     conda deactivate
 
     # Truvari collapse
