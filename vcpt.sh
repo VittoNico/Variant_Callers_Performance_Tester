@@ -1,4 +1,4 @@
-#!/bin/bash
+!/bin/bash
 
 # Legge i sample SRR da un file chiamato sample.txt
 mapfile -t SAMPLES < sample.txt
