@@ -5,7 +5,7 @@ mapfile -t SAMPLES < sample.txt
 
 # Reference file
 REF="reference.fasta"
-THREADS=24
+THREADS=12
 
 for SAMPLE in "${SAMPLES[@]}"; do
     echo "🔽 Processing $SAMPLE..."
@@ -28,7 +28,7 @@ for SAMPLE in "${SAMPLES[@]}"; do
 
     # ========== PROCESSING ==========
     porechop -i "${RAW_READS}" -o "${SAMPLE}_trimmed.fastq" --threads $THREADS
-    cat "${SAMPLE}_trimmed.fastq" | NanoFilt -q 10 > "${SAMPLE}_filtered.fastq"
+    cat "${SAMPLE}_trimmed.fastq" | NanoFilt -q 7 > "${SAMPLE}_filtered.fastq"
     FILTERED_READS="${SAMPLE}_filtered.fastq"
 
     # ========== MAPPING ==========
